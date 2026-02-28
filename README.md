@@ -92,7 +92,7 @@ Create `.opencode/session-context.json` in your project root to customize behavi
     "- Always follow existing patterns in src/",
     "- Never commit .env files"
   ],
-  "sessionsDir": "~/.local/share/opencode/sessions"
+  "dbPath": "~/.local/share/opencode/opencode.db"
 }
 ```
 
@@ -105,10 +105,9 @@ Create `.opencode/session-context.json` in your project root to customize behavi
 | `includePatterns` | `[]` | File patterns to prioritize in context |
 | `excludePatterns` | `[]` | Patterns to ignore |
 | `customContext` | `[]` | Static context lines to always include |
-| `sessionsDir` | `~/.local/share/opencode/sessions` | Path to OpenCode sessions directory |
+| `dbPath` | `~/.local/share/opencode/opencode.db` | Path to OpenCode SQLite database |
 
-**Note**: The `sessionsDir` supports `~` expansion. Adjust for your OS or custom OpenCode config location.
-
+**Note**: The `dbPath` supports `~` expansion. Adjust for your OS or custom OpenCode config location.
 ## How It Works
 
 ```

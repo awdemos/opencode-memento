@@ -1,4 +1,5 @@
 import type { Plugin } from "@opencode-ai/plugin"
+import { Database } from "bun:sqlite"
 
 interface SessionContextConfig {
   minSessions?: number
@@ -6,7 +7,7 @@ interface SessionContextConfig {
   includePatterns?: string[]
   excludePatterns?: string[]
   customContext?: string[]
-  sessionsDir?: string
+  dbPath?: string
 }
 
 const DEFAULT_CONFIG: Required<SessionContextConfig> = {
@@ -15,7 +16,7 @@ const DEFAULT_CONFIG: Required<SessionContextConfig> = {
   includePatterns: [],
   excludePatterns: ["node_modules", "dist", ".git"],
   customContext: [],
-  sessionsDir: `${process.env.HOME}/.local/share/opencode/sessions`,
+  dbPath: `${process.env.HOME}/.local/share/opencode/opencode.db`,
 }
 
 export const SessionContextPlugin: Plugin = async ({
@@ -35,7 +36,7 @@ export const SessionContextPlugin: Plugin = async ({
     },
   })
 
-  const sessionCount = await getSessionCount(projectPath, config.sessionsDir)
+  const sessionCount = await getSessionCount(projectPath, config.dbPath)
   const isActive = sessionCount >= config.minSessions
 
   if (isActive) {
@@ -44,7 +45,7 @@ export const SessionContextPlugin: Plugin = async ({
         service: "opencode-memento",
         level: "info",
         message: `Session context injection active (${sessionCount} prior sessions)`,
-        extra: { sessionsDir: config.sessionsDir },
+        extra: { dbPath: config.dbPath },
       },
     })
   }
@@ -60,14 +61,14 @@ export const SessionContextPlugin: Plugin = async ({
 
       const recentSessions = await getRecentSessions(
         projectPath,
-        config.sessionsDir,
+        config.dbPath,
         config.searchLimit
       )
       if (recentSessions.length > 0) {
         contextSections.push("### Recent Sessions", "")
         recentSessions.forEach((session) => {
           contextSections.push(
-            `- ${session.id} (${session.date}): ${session.summary || "No summary"}`
+            `- ${session.id} (${session.date}): ${session.title || "No title"}`
           )
         })
         contextSections.push("")
@@ -97,7 +98,6 @@ export const SessionContextPlugin: Plugin = async ({
             extra: {
               sessionCount,
               sectionsCount: contextSections.length,
-              sessionsDir: config.sessionsDir,
             },
           },
         })
@@ -119,36 +119,33 @@ async function loadConfig(projectDir: string): Promise<Required<SessionContextCo
 interface SessionSummary {
   id: string
   date: string
-  summary?: string
+  title?: string
+}
+
+function getDb(dbPath: string): Database | null {
+  try {
+    const db = new Database(dbPath, { readonly: true, create: false })
+    return db
+  } catch (error) {
+    return null
+  }
 }
 
 async function getSessionCount(
   projectPath: string,
-  sessionsDir: string
+  dbPath: string
 ): Promise<number> {
   try {
-    const sessionDirStats = await Bun.file(sessionsDir).exists()
-    if (!sessionDirStats) {
-      console.warn(`[opencode-memento] Sessions directory not found: ${sessionsDir}`)
+    const db = getDb(dbPath)
+    if (!db) {
       return 0
     }
 
-    const glob = new Bun.Glob("**/*.json")
-    let count = 0
-
-    for await (const file of glob.scan({ cwd: sessionsDir })) {
-      try {
-        const content = await Bun.file(`${sessionsDir}/${file}`).text()
-        if (content.includes(projectPath)) count++
-      } catch (error) {
-        console.warn(
-          `[opencode-memento] Failed to read session file ${file}:`,
-          error instanceof Error ? error.message : String(error)
-        )
-        continue
-      }
-    }
-
+    const query = db.query<number, [string]>(
+      "SELECT COUNT(*) as count FROM session WHERE directory = ?"
+    )
+    const count = query.get(projectPath) ?? 0
+    db.close()
     return count
   } catch (error) {
     console.warn(
@@ -161,44 +158,30 @@ async function getSessionCount(
 
 async function getRecentSessions(
   projectPath: string,
-  sessionsDir: string,
+  dbPath: string,
   limit: number
 ): Promise<SessionSummary[]> {
   try {
-    const sessionDirExists = await Bun.file(sessionsDir).exists()
-    if (!sessionDirExists) {
-      console.warn(`[opencode-memento] Sessions directory not found: ${sessionsDir}`)
+    const db = getDb(dbPath)
+    if (!db) {
       return []
     }
 
-    const glob = new Bun.Glob("**/*.json")
-    const sessions: SessionSummary[] = []
+    const query = db.query<
+      { id: string; title: string; time_created: number },
+      [string, number]
+    >(
+      "SELECT id, title, time_created FROM session WHERE directory = ? ORDER BY time_created DESC LIMIT ?"
+    )
 
-    for await (const file of glob.scan({ cwd: sessionsDir })) {
-      try {
-        const content = await Bun.file(`${sessionsDir}/${file}`).text()
-        if (!content.includes(projectPath)) continue
+    const rows = query.all(projectPath, limit)
+    db.close()
 
-        const data = JSON.parse(content)
-
-        sessions.push({
-          id: data.id || file.replace(".json", ""),
-          date: normalizeDate(data.createdAt || data.updatedAt || data.date),
-          summary: data.summary || data.title || data.description || "",
-        })
-      } catch (error) {
-        console.warn(
-          `[opencode-memento] Failed to parse session ${file}:`,
-          error instanceof Error ? error.message : String(error)
-        )
-        continue
-      }
-    }
-
-    return sessions
-      .filter((s) => s.id && s.date !== "Unknown")
-      .sort((a, b) => b.date.localeCompare(a.date))
-      .slice(0, limit)
+    return rows.map((row) => ({
+      id: row.id,
+      date: new Date(row.time_created).toISOString().split("T")[0],
+      title: row.title,
+    }))
   } catch (error) {
     console.warn(
       `[opencode-memento] Error getting recent sessions:`,
@@ -206,12 +189,6 @@ async function getRecentSessions(
     )
     return []
   }
-}
-
-function normalizeDate(date: unknown): string {
-  if (typeof date === "string") return date
-  if (typeof date === "number") return new Date(date).toISOString()
-  return "Unknown"
 }
 
 async function discoverPatterns(
