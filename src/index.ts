@@ -6,6 +6,7 @@ interface SessionContextConfig {
   includePatterns?: string[]
   excludePatterns?: string[]
   customContext?: string[]
+  sessionsDir?: string
 }
 
 const DEFAULT_CONFIG: Required<SessionContextConfig> = {
@@ -14,6 +15,7 @@ const DEFAULT_CONFIG: Required<SessionContextConfig> = {
   includePatterns: [],
   excludePatterns: ["node_modules", "dist", ".git"],
   customContext: [],
+  sessionsDir: `${process.env.HOME}/.local/share/opencode/sessions`,
 }
 
 export const SessionContextPlugin: Plugin = async ({
@@ -23,15 +25,26 @@ export const SessionContextPlugin: Plugin = async ({
 }) => {
   const config = await loadConfig(directory)
   const projectPath = directory
-  const sessionCount = await getSessionCount(projectPath)
+
+  await client.app.log({
+    body: {
+      service: "opencode-memento",
+      level: "warn",
+      message: "Using experimental session.compacting hook - behavior may change",
+      extra: { hook: "experimental.session.compacting" },
+    },
+  })
+
+  const sessionCount = await getSessionCount(projectPath, config.sessionsDir)
   const isActive = sessionCount >= config.minSessions
 
   if (isActive) {
     await client.app.log({
       body: {
-        service: "opencode-session-context",
+        service: "opencode-memento",
         level: "info",
         message: `Session context injection active (${sessionCount} prior sessions)`,
+        extra: { sessionsDir: config.sessionsDir },
       },
     })
   }
@@ -41,11 +54,15 @@ export const SessionContextPlugin: Plugin = async ({
       if (!isActive) return
 
       const contextSections: string[] = [
-        "## Session Context (from opencode-session-context)",
+        "## Session Context (from opencode-memento)",
         "",
       ]
 
-      const recentSessions = await getRecentSessions(projectPath, config.searchLimit)
+      const recentSessions = await getRecentSessions(
+        projectPath,
+        config.sessionsDir,
+        config.searchLimit
+      )
       if (recentSessions.length > 0) {
         contextSections.push("### Recent Sessions", "")
         recentSessions.forEach((session) => {
@@ -69,16 +86,22 @@ export const SessionContextPlugin: Plugin = async ({
         contextSections.push("")
       }
 
-      output.context.push(contextSections.join("\n"))
+      if (contextSections.length > 2) {
+        output.context.push(contextSections.join("\n"))
 
-      await client.app.log({
-        body: {
-          service: "opencode-session-context",
-          level: "debug",
-          message: "Injected session context into compaction",
-          extra: { sessionCount, sectionsCount: contextSections.length },
-        },
-      })
+        await client.app.log({
+          body: {
+            service: "opencode-memento",
+            level: "debug",
+            message: "Injected session context into compaction",
+            extra: {
+              sessionCount,
+              sectionsCount: contextSections.length,
+              sessionsDir: config.sessionsDir,
+            },
+          },
+        })
+      }
     },
   }
 }
@@ -99,9 +122,17 @@ interface SessionSummary {
   summary?: string
 }
 
-async function getSessionCount(projectPath: string): Promise<number> {
+async function getSessionCount(
+  projectPath: string,
+  sessionsDir: string
+): Promise<number> {
   try {
-    const sessionsDir = `${process.env.HOME}/.local/share/opencode/sessions`
+    const sessionDirStats = await Bun.file(sessionsDir).exists()
+    if (!sessionDirStats) {
+      console.warn(`[opencode-memento] Sessions directory not found: ${sessionsDir}`)
+      return 0
+    }
+
     const glob = new Bun.Glob("**/*.json")
     let count = 0
 
@@ -109,23 +140,37 @@ async function getSessionCount(projectPath: string): Promise<number> {
       try {
         const content = await Bun.file(`${sessionsDir}/${file}`).text()
         if (content.includes(projectPath)) count++
-      } catch {
+      } catch (error) {
+        console.warn(
+          `[opencode-memento] Failed to read session file ${file}:`,
+          error instanceof Error ? error.message : String(error)
+        )
         continue
       }
     }
 
     return count
-  } catch {
+  } catch (error) {
+    console.warn(
+      `[opencode-memento] Error counting sessions:`,
+      error instanceof Error ? error.message : String(error)
+    )
     return 0
   }
 }
 
 async function getRecentSessions(
   projectPath: string,
+  sessionsDir: string,
   limit: number
 ): Promise<SessionSummary[]> {
   try {
-    const sessionsDir = `${process.env.HOME}/.local/share/opencode/sessions`
+    const sessionDirExists = await Bun.file(sessionsDir).exists()
+    if (!sessionDirExists) {
+      console.warn(`[opencode-memento] Sessions directory not found: ${sessionsDir}`)
+      return []
+    }
+
     const glob = new Bun.Glob("**/*.json")
     const sessions: SessionSummary[] = []
 
@@ -135,20 +180,38 @@ async function getRecentSessions(
         if (!content.includes(projectPath)) continue
 
         const data = JSON.parse(content)
+
         sessions.push({
           id: data.id || file.replace(".json", ""),
-          date: data.createdAt || data.updatedAt || "Unknown",
-          summary: data.summary || data.title,
+          date: normalizeDate(data.createdAt || data.updatedAt || data.date),
+          summary: data.summary || data.title || data.description || "",
         })
-      } catch {
+      } catch (error) {
+        console.warn(
+          `[opencode-memento] Failed to parse session ${file}:`,
+          error instanceof Error ? error.message : String(error)
+        )
         continue
       }
     }
 
-    return sessions.sort((a, b) => b.date.localeCompare(a.date)).slice(0, limit)
-  } catch {
+    return sessions
+      .filter((s) => s.id && s.date !== "Unknown")
+      .sort((a, b) => b.date.localeCompare(a.date))
+      .slice(0, limit)
+  } catch (error) {
+    console.warn(
+      `[opencode-memento] Error getting recent sessions:`,
+      error instanceof Error ? error.message : String(error)
+    )
     return []
   }
+}
+
+function normalizeDate(date: unknown): string {
+  if (typeof date === "string") return date
+  if (typeof date === "number") return new Date(date).toISOString()
+  return "Unknown"
 }
 
 async function discoverPatterns(

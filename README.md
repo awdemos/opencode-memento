@@ -12,9 +12,13 @@ OpenCode sessions can lose context when compacted, especially on projects with e
 2. **Searches prior sessions** - Finds relevant past conversations matching current context
 3. **Injects into compaction** - Ensures critical project knowledge survives session compaction
 
+> ⚠️ **Experimental**: This plugin uses the `experimental.session.compacting` hook. The hook's behavior may change in future OpenCode versions. The plugin logs a warning on startup.
+
 ## Installation
 
-Add to your OpenCode config:
+### Option 1: npm (Recommended)
+
+Once published, install directly:
 
 ```json
 {
@@ -22,21 +26,64 @@ Add to your OpenCode config:
 }
 ```
 
-Or for local development:
+Or with version pinning:
 
 ```json
 {
-  "plugin": ["./path/to/opencode-memento"]
+  "plugin": ["opencode-memento@0.1.0"]
 }
 ```
 
-## Configuration
+### Option 2: Local Development
 
-Create `.opencode/session-context.json` in your project:
+Clone this repo and reference it with an absolute path:
 
 ```json
 {
-  "minSessions": 10,
+  "plugin": ["/path/to/opencode-memento"]
+}
+```
+
+> **Note**: Use an absolute path (e.g., `/Users/you/code/opencode-memento`), not a relative path like `./opencode-memento`. Relative paths resolve from the config file location (`~/.config/opencode/`), not your home directory.
+
+### Option 3: file:// URL
+
+Alternatively, use the `file://` protocol:
+
+```json
+{
+  "plugin": ["file:///Users/you/code/opencode-memento"]
+}
+```
+
+## Verifying Installation
+
+After adding the plugin, restart OpenCode and check the startup logs:
+
+```bash
+# Check if the plugin loaded
+cat ~/.local/share/opencode/log/*.log | grep -i memento
+```
+
+You should see:
+```
+service=plugin path=opencode-memento loading plugin
+service=opencode-memento hook=experimental.session.compacting Using experimental session.compacting hook
+```
+
+If you see an error like `Cannot find module`, verify your config:
+
+```bash
+cat ~/.config/opencode/opencode.json | grep -A2 plugin
+```
+
+## Configuration (Optional)
+
+Create `.opencode/session-context.json` in your project root to customize behavior:
+
+```json
+{
+  "minSessions": 5,
   "searchLimit": 3,
   "includePatterns": ["*.md", "*.ts", "*.go"],
   "excludePatterns": ["node_modules", "dist"],
@@ -44,7 +91,8 @@ Create `.opencode/session-context.json` in your project:
     "## Project-Specific Notes",
     "- Always follow existing patterns in src/",
     "- Never commit .env files"
-  ]
+  ],
+  "sessionsDir": "~/.local/share/opencode/sessions"
 }
 ```
 
@@ -57,6 +105,9 @@ Create `.opencode/session-context.json` in your project:
 | `includePatterns` | `[]` | File patterns to prioritize in context |
 | `excludePatterns` | `[]` | Patterns to ignore |
 | `customContext` | `[]` | Static context lines to always include |
+| `sessionsDir` | `~/.local/share/opencode/sessions` | Path to OpenCode sessions directory |
+
+**Note**: The `sessionsDir` supports `~` expansion. Adjust for your OS or custom OpenCode config location.
 
 ## How It Works
 
@@ -96,17 +147,17 @@ When a session is compacted, the plugin injects context like:
 ```markdown
 ## Session Context (from opencode-memento)
 
-### Recent Work (3 sessions)
+### Recent Sessions
 - ses_abc123 (Feb 22): Implemented JWT auth middleware
 - ses_def456 (Feb 21): Refactored API error handling  
 - ses_ghi789 (Feb 20): Added rate limiting to endpoints
 
-### Key Patterns
-- Error handling: Use `AppError` class from src/errors/
-- Auth: Middleware chain in src/middleware/auth.ts
-- Testing: Jest with supertest for API tests
+### Key Patterns from Prior Work
+- ESLint configured - follow linting rules
+- Prettier configured - use for formatting
+- See AGENTS.md for anti-patterns to avoid
 
-### Project Notes
+### Project-Specific Notes
 - Always follow existing patterns in src/
 - Never commit .env files
 ```
@@ -133,3 +184,8 @@ PRs welcome! Feel free to open issues or submit pull requests.
 ## License
 
 MIT
+
+## Links
+
+- [GitHub](https://github.com/awdemos/opencodememento)
+- [npm](https://www.npmjs.com/package/opencode-memento)
