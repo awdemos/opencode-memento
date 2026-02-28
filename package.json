@@ -1,0 +1,41 @@
+{
+  "name": "opencode-memento",
+  "version": "0.1.0",
+  "description": "Preserves project context across OpenCode sessions by injecting relevant prior work into compaction",
+  "main": "dist/index.js",
+  "module": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "type": "module",
+  "scripts": {
+    "build": "tsc && bun build ./src/index.ts --outdir ./dist --target bun",
+    "dev": "bun run --watch ./src/index.ts",
+    "typecheck": "tsc --noEmit",
+    "prepublishOnly": "bun run build"
+  },
+  "keywords": [
+    "opencode",
+    "opencode-plugin",
+    "session",
+    "context",
+    "compaction",
+    "ai-agent"
+  ],
+  "author": "",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/YOUR_USERNAME/opencode-memento"
+  },
+  "peerDependencies": {
+    "@opencode-ai/plugin": ">=0.1.0"
+  },
+  "devDependencies": {
+    "@opencode-ai/plugin": "latest",
+    "typescript": "^5.0.0",
+    "bun-types": "latest"
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ]
+}
