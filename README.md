@@ -187,5 +187,5 @@ MIT
 
 ## Links
 
-- [GitHub](https://github.com/awdemos/opencodememento)
+- [GitHub](https://github.com/awdemos/opencode-memento)
 - [npm](https://www.npmjs.com/package/opencode-memento)
