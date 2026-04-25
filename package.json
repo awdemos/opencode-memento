@@ -5,6 +5,12 @@
   "main": "dist/index.js",
   "module": "dist/index.js",
   "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
   "type": "module",
   "scripts": {
     "build": "tsc && bun build ./src/index.ts --outdir ./dist --target bun",
@@ -26,6 +32,10 @@
     "type": "git",
     "url": "git+https://github.com/awdemos/opencode-memento.git"
   },
+  "bugs": {
+    "url": "https://github.com/awdemos/opencode-memento/issues"
+  },
+  "homepage": "https://github.com/awdemos/opencode-memento#readme",
   "peerDependencies": {
     "@opencode-ai/plugin": ">=0.1.0"
   },

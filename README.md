@@ -14,6 +14,37 @@ OpenCode sessions can lose context when compacted, especially on projects with e
 
 > ⚠️ **Experimental**: This plugin uses the `experimental.session.compacting` hook. The hook's behavior may change in future OpenCode versions. The plugin logs a warning on startup.
 
+## How It Works
+
+```
+┌─────────────────────────────────────────────────────────┐
+│                    Session Created                       │
+└────────────────────────┬────────────────────────────────┘
+                         │
+                         ▼
+┌─────────────────────────────────────────────────────────┐
+│  Plugin checks: How many prior sessions on this project?│
+└────────────────────────┬────────────────────────────────┘
+                         │
+           ┌─────────────┴─────────────┐
+           │                           │
+     < minSessions               >= minSessions
+           │                           │
+           ▼                           ▼
+      No injection         ┌──────────────────────┐
+                           │  Search recent       │
+                           │  sessions for        │
+                           │  relevant context    │
+                           └──────────┬───────────┘
+                                      │
+                                      ▼
+                           ┌──────────────────────┐
+                           │  On compaction:      │
+                           │  Inject discovered   │
+                           │  context + custom    │
+                           └──────────────────────┘
+```
+
 ## Installation
 
 ### Option 1: npm (Recommended)
@@ -106,37 +137,6 @@ Create `.opencode/session-context.json` in your project root to customize behavi
 | `dbPath` | `~/.local/share/opencode/opencode.db` | Path to OpenCode SQLite database |
 
 **Note**: The `dbPath` supports `~` expansion. Adjust for your OS or custom OpenCode config location.
-## How It Works
-
-```
-┌─────────────────────────────────────────────────────────┐
-│                    Session Created                       │
-└────────────────────────┬────────────────────────────────┘
-                         │
-                         ▼
-┌─────────────────────────────────────────────────────────┐
-│  Plugin checks: How many prior sessions on this project?│
-└────────────────────────┬────────────────────────────────┘
-                         │
-           ┌─────────────┴─────────────┐
-           │                           │
-     < minSessions               >= minSessions
-           │                           │
-           ▼                           ▼
-      No injection         ┌──────────────────────┐
-                           │  Search recent       │
-                           │  sessions for        │
-                           │  relevant context    │
-                           └──────────┬───────────┘
-                                      │
-                                      ▼
-                           ┌──────────────────────┐
-                           │  On compaction:      │
-                           │  Inject discovered   │
-                           │  context + custom    │
-                           └──────────────────────┘
-```
-
 ## Example Output
 
 When a session is compacted, the plugin injects context like:
