@@ -85,8 +85,6 @@ Create `.opencode/session-context.json` in your project root to customize behavi
 {
   "minSessions": 5,
   "searchLimit": 3,
-  "includePatterns": ["*.md", "*.ts", "*.go"],
-  "excludePatterns": ["node_modules", "dist"],
   "customContext": [
     "## Project-Specific Notes",
     "- Always follow existing patterns in src/",
@@ -102,8 +100,8 @@ Create `.opencode/session-context.json` in your project root to customize behavi
 |--------|---------|-------------|
 | `minSessions` | `5` | Minimum sessions before context injection activates |
 | `searchLimit` | `3` | Max prior sessions to reference |
-| `includePatterns` | `[]` | File patterns to prioritize in context |
-| `excludePatterns` | `[]` | Patterns to ignore |
+| `maxPatterns` | `12` | Max AGENTS.md patterns to inject (token budget) |
+| `maxCustomContextLines` | `20` | Max custom context lines to inject |
 | `customContext` | `[]` | Static context lines to always include |
 | `dbPath` | `~/.local/share/opencode/opencode.db` | Path to OpenCode SQLite database |
 
@@ -152,9 +150,11 @@ When a session is compacted, the plugin injects context like:
 - ses_ghi789 (Feb 20): Added rate limiting to endpoints
 
 ### Key Patterns from Prior Work
-- ESLint configured - follow linting rules
-- Prettier configured - use for formatting
-- See AGENTS.md for anti-patterns to avoid
+- [Command] Test all: `npm test`
+- [Command] Typecheck: `npm run typecheck`
+- [Convention] Use TypeScript for all new files
+- [Boundary: Never] Commit secrets or `.env` files
+- [Anti-Pattern] Using `any` instead of proper types
 
 ### Project-Specific Notes
 - Always follow existing patterns in src/

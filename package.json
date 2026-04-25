@@ -30,7 +30,7 @@
     "@opencode-ai/plugin": ">=0.1.0"
   },
   "devDependencies": {
-    "@opencode-ai/plugin": "latest",
+    "@opencode-ai/plugin": ">=0.1.0",
     "typescript": "^5.0.0",
     "bun-types": "latest"
   },
