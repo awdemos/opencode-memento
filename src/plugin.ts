@@ -1,6 +1,13 @@
 import type { Plugin } from "@opencode-ai/plugin"
 import { loadConfig } from "./config"
-import { getSessionCount, getRecentSessions } from "./db"
+import {
+  getSessionCount,
+  getRecentSessions,
+  getErrorPatterns,
+  getTodos,
+  getDecisions,
+  getFileChanges,
+} from "./db"
 import { discoverPatterns } from "./patterns"
 
 export const SessionContextPlugin: Plugin = async ({
@@ -57,6 +64,79 @@ export const SessionContextPlugin: Plugin = async ({
           )
         })
         contextSections.push("")
+      }
+
+      if (config.enableErrorPatterns) {
+        const errors = getErrorPatterns(
+          projectPath,
+          config.dbPath,
+          config.maxErrors
+        )
+        if (errors.length > 0) {
+          hasContent = true
+          contextSections.push("### Known Issues & Errors", "")
+          errors.forEach((err) => {
+            const title = err.sessionTitle ? ` [${err.sessionTitle}]` : ""
+            contextSections.push(`- ${err.error}${title} (${err.date})`)
+          })
+          contextSections.push("")
+        }
+      }
+
+      if (config.enableTodos) {
+        const todos = getTodos(projectPath, config.dbPath, config.maxTodos)
+        if (todos.length > 0) {
+          hasContent = true
+          contextSections.push("### Outstanding TODOs", "")
+          todos.forEach((todo) => {
+            const title = todo.sessionTitle ? ` [${todo.sessionTitle}]` : ""
+            contextSections.push(`- ${todo.todo}${title} (${todo.date})`)
+          })
+          contextSections.push("")
+        }
+      }
+
+      if (config.enableDecisions) {
+        const decisions = getDecisions(
+          projectPath,
+          config.dbPath,
+          config.maxDecisions
+        )
+        if (decisions.length > 0) {
+          hasContent = true
+          contextSections.push("### Recent Decisions", "")
+          decisions.forEach((decision) => {
+            const title = decision.sessionTitle
+              ? ` [${decision.sessionTitle}]`
+              : ""
+            contextSections.push(
+              `- ${decision.decision}${title} (${decision.date})`
+            )
+          })
+          contextSections.push("")
+        }
+      }
+
+      if (config.enableFileChanges) {
+        const changes = getFileChanges(
+          projectPath,
+          config.dbPath,
+          config.maxFileChanges
+        )
+        if (changes.length > 0) {
+          hasContent = true
+          contextSections.push("### Recent File Changes", "")
+          changes.forEach((change) => {
+            const title = change.sessionTitle
+              ? ` [${change.sessionTitle}]`
+              : ""
+            const stats = `+${change.additions}/-${change.deletions} in ${change.files} files`
+            contextSections.push(
+              `- ${stats}${title} (${change.date})`
+            )
+          })
+          contextSections.push("")
+        }
       }
 
       const patterns = await discoverPatterns(projectPath, config)
