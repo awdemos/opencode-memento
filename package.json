@@ -41,15 +41,11 @@
   },
   "devDependencies": {
     "@opencode-ai/plugin": ">=0.1.0",
-    "@types/better-sqlite3": "^7.6.13",
     "bun-types": "latest",
     "typescript": "^5.0.0"
   },
   "files": [
     "dist",
     "README.md"
-  ],
-  "dependencies": {
-    "better-sqlite3": "^12.9.0"
-  }
+  ]
 }

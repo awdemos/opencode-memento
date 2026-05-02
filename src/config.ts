@@ -8,6 +8,14 @@ export interface SessionContextConfig {
   maxCustomContextLines?: number
   customContext?: string[]
   dbPath?: string
+  enableErrorPatterns?: boolean
+  enableTodos?: boolean
+  enableDecisions?: boolean
+  enableFileChanges?: boolean
+  maxErrors?: number
+  maxTodos?: number
+  maxDecisions?: number
+  maxFileChanges?: number
 }
 
 export const DEFAULT_CONFIG: Required<SessionContextConfig> = {
@@ -17,6 +25,14 @@ export const DEFAULT_CONFIG: Required<SessionContextConfig> = {
   maxCustomContextLines: 20,
   customContext: [],
   dbPath: "~/.local/share/opencode/opencode.db",
+  enableErrorPatterns: true,
+  enableTodos: true,
+  enableDecisions: true,
+  enableFileChanges: true,
+  maxErrors: 5,
+  maxTodos: 5,
+  maxDecisions: 5,
+  maxFileChanges: 3,
 }
 
 function validateConfig(raw: unknown): Partial<SessionContextConfig> {
@@ -32,6 +48,14 @@ function validateConfig(raw: unknown): Partial<SessionContextConfig> {
   if (typeof config.maxCustomContextLines === "number") result.maxCustomContextLines = config.maxCustomContextLines
   if (Array.isArray(config.customContext)) result.customContext = config.customContext.filter((c): c is string => typeof c === "string")
   if (typeof config.dbPath === "string") result.dbPath = config.dbPath
+  if (typeof config.enableErrorPatterns === "boolean") result.enableErrorPatterns = config.enableErrorPatterns
+  if (typeof config.enableTodos === "boolean") result.enableTodos = config.enableTodos
+  if (typeof config.enableDecisions === "boolean") result.enableDecisions = config.enableDecisions
+  if (typeof config.enableFileChanges === "boolean") result.enableFileChanges = config.enableFileChanges
+  if (typeof config.maxErrors === "number") result.maxErrors = config.maxErrors
+  if (typeof config.maxTodos === "number") result.maxTodos = config.maxTodos
+  if (typeof config.maxDecisions === "number") result.maxDecisions = config.maxDecisions
+  if (typeof config.maxFileChanges === "number") result.maxFileChanges = config.maxFileChanges
 
   return result
 }

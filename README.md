@@ -135,6 +135,14 @@ Create `.opencode/session-context.json` in your project root to customize behavi
 | `maxCustomContextLines` | `20` | Max custom context lines to inject |
 | `customContext` | `[]` | Static context lines to always include |
 | `dbPath` | `~/.local/share/opencode/opencode.db` | Path to OpenCode SQLite database |
+| `enableErrorPatterns` | `true` | Extract error/failure patterns from session messages |
+| `enableTodos` | `true` | Extract TODO/FIXME items from session messages |
+| `enableDecisions` | `true` | Extract architectural decisions from session messages |
+| `enableFileChanges` | `true` | Show recent file change summaries |
+| `maxErrors` | `5` | Max error patterns to include |
+| `maxTodos` | `5` | Max TODO items to include |
+| `maxDecisions` | `5` | Max decisions to include |
+| `maxFileChanges` | `3` | Max file change summaries to include |
 
 **Note**: The `dbPath` supports `~` expansion. Adjust for your OS or custom OpenCode config location.
 ## Example Output
@@ -148,6 +156,22 @@ When a session is compacted, the plugin injects context like:
 - ses_abc123 (Feb 22): Implemented JWT auth middleware
 - ses_def456 (Feb 21): Refactored API error handling  
 - ses_ghi789 (Feb 20): Added rate limiting to endpoints
+
+### Known Issues & Errors
+- Type error in auth.ts: Argument of type 'string' is not assignable to parameter of type 'number' [JWT Auth] (Feb 22)
+- npm test failing on Windows due to path separators [Testing] (Feb 21)
+
+### Outstanding TODOs
+- TODO: Add refresh token rotation strategy [JWT Auth] (Feb 22)
+- FIXME: Handle edge case where user has no roles [Refactor] (Feb 21)
+
+### Recent Decisions
+- Decided to use httpOnly cookies instead of localStorage for token storage [JWT Auth] (Feb 22)
+- Going with zod for input validation instead of joi [API Refactor] (Feb 21)
+
+### Recent File Changes
+- +450/-120 in 8 files [JWT Auth] (Feb 22)
+- +200/-80 in 5 files [API Refactor] (Feb 21)
 
 ### Key Patterns from Prior Work
 - [Command] Test all: `npm test`
