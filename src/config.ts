@@ -1,3 +1,4 @@
+import { readFile } from "fs/promises"
 import { homedir } from "os"
 
 export interface SessionContextConfig {
@@ -40,7 +41,7 @@ export async function loadConfig(
 ): Promise<Required<SessionContextConfig>> {
   try {
     const configPath = `${projectDir}/.opencode/session-context.json`
-    const raw = await Bun.file(configPath).json()
+    const raw = JSON.parse(await readFile(configPath, "utf-8"))
     const fileConfig = validateConfig(raw)
     const merged = { ...DEFAULT_CONFIG, ...fileConfig }
     if (merged.dbPath.startsWith("~")) {

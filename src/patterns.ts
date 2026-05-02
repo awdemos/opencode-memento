@@ -1,3 +1,4 @@
+import { readFile } from "fs/promises"
 import type { SessionContextConfig } from "./config"
 
 function extractBullets(
@@ -62,7 +63,7 @@ export async function discoverPatterns(
   let instructionsContent: string | null = null
   for (const path of instructionPaths) {
     try {
-      instructionsContent = await Bun.file(path).text()
+      instructionsContent = await readFile(path, "utf-8")
       break
     } catch (error) {
       console.debug(

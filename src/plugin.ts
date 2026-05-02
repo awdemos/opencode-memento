@@ -102,4 +102,4 @@ export const SessionContextPlugin: Plugin = async ({
   }
 }
 
-export default SessionContextPlugin
+export default { id: "opencode-memento", server: SessionContextPlugin }
