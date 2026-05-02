@@ -65,7 +65,7 @@ export function getRecentSessions(
 
     const rows = query.all(projectPath, limit)
 
-    return rows.map((row) => ({
+    return rows.map((row: { id: string; title: string | null; time_created: number }) => ({
       id: row.id,
       date: new Date(row.time_created).toISOString().split("T")[0],
       title: row.title ?? undefined,
