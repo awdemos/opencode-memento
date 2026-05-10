@@ -1,6 +1,6 @@
 {
   "name": "opencode-memento",
-  "version": "0.1.0",
+  "version": "1.0.0",
   "description": "Preserves project context across OpenCode sessions by injecting relevant prior work into compaction",
   "main": "dist/index.js",
   "module": "dist/index.js",
