@@ -8,7 +8,20 @@ import {
   getDecisions,
   getFileChanges,
 } from "./db"
+import {
+  extractSessionMessages,
+  extractSessionTodos,
+  extractSessionErrors,
+  extractSessionDecisions,
+  extractSessionFileChanges,
+} from "./indexer"
+import {
+  querySessions,
+  indexSessionChunks,
+  getIndexedSessions,
+} from "./vector-client"
 import { discoverPatterns } from "./patterns"
+import { getDb } from "./db"
 
 export const SessionContextPlugin: Plugin = async ({
   client,
@@ -40,9 +53,77 @@ export const SessionContextPlugin: Plugin = async ({
     })
   }
 
+  const vectorConfig = { baseUrl: config.vectorSearchUrl }
+  let sessionsIndexed = false
+
+  async function ensureSessionsIndexed(): Promise<void> {
+    if (sessionsIndexed || !config.enableVectorSearch) return
+
+    const db = getDb(config.dbPath)
+    if (!db) return
+
+    try {
+      const indexed = new Set(await getIndexedSessions(vectorConfig))
+      const allMessages = extractSessionMessages(db, projectPath)
+      const allTodos = extractSessionTodos(db, projectPath)
+      const allErrors = extractSessionErrors(db, projectPath)
+      const allDecisions = extractSessionDecisions(db, projectPath)
+      const allFileChanges = extractSessionFileChanges(db, projectPath)
+
+      const allSessionIds = new Set([
+        ...allMessages.keys(),
+        ...allTodos.keys(),
+        ...allErrors.keys(),
+        ...allDecisions.keys(),
+        ...allFileChanges.keys(),
+      ])
+
+      let indexedCount = 0
+      for (const sessionId of allSessionIds) {
+        if (indexed.has(sessionId)) continue
+
+        const chunks = [
+          ...(allMessages.get(sessionId) || []),
+          ...(allTodos.get(sessionId) || []),
+          ...(allErrors.get(sessionId) || []),
+          ...(allDecisions.get(sessionId) || []),
+          ...(allFileChanges.get(sessionId) || []),
+        ]
+
+        if (chunks.length === 0) continue
+
+        try {
+          await indexSessionChunks(sessionId, chunks, vectorConfig)
+          indexedCount++
+        } catch (e) {
+          const msg = e instanceof Error ? e.message : String(e)
+          console.warn(`[opencode-memento] Failed to index session ${sessionId}: ${msg}`)
+        }
+      }
+
+      if (indexedCount > 0) {
+        await client.app.log({
+          body: {
+            service: "opencode-memento",
+            level: "info",
+            message: `Indexed ${indexedCount} sessions for vector search`,
+          },
+        })
+      }
+
+      sessionsIndexed = true
+    } finally {
+      db.close()
+    }
+  }
+
   return {
     "experimental.session.compacting": async (_input, output) => {
       if (!isActive) return
+
+      if (config.enableVectorSearch) {
+        await ensureSessionsIndexed()
+      }
 
       const contextSections: string[] = [
         "## Session Context (from opencode-memento)",
@@ -67,11 +148,41 @@ export const SessionContextPlugin: Plugin = async ({
       }
 
       if (config.enableErrorPatterns) {
-        const errors = getErrorPatterns(
-          projectPath,
-          config.dbPath,
-          config.maxErrors
-        )
+        let errors: { sessionId: string; sessionTitle?: string; error: string; date: string }[] = []
+
+        if (config.enableVectorSearch) {
+          try {
+            const results = await querySessions(
+              "error failure exception bug problem crash broken",
+              vectorConfig,
+              { source: "error", topK: config.maxErrors * 2 }
+            )
+            const seen = new Set<string>()
+            for (const r of results) {
+              if (errors.length >= config.maxErrors) break
+              const key = `${r.session_id}:${r.text}`
+              if (!seen.has(key)) {
+                seen.add(key)
+                errors.push({
+                  sessionId: r.session_id,
+                  sessionTitle: r.metadata.title as string | undefined,
+                  error: r.text,
+                  date: new Date((r.metadata.time_created as number) || Date.now())
+                    .toISOString().split("T")[0],
+                })
+              }
+            }
+          } catch (e) {
+            const msg = e instanceof Error ? e.message : String(e)
+            console.warn(`[opencode-memento] Vector search for errors failed: ${msg}`)
+          }
+        }
+
+        if (errors.length === 0) {
+          const sqliteErrors = getErrorPatterns(projectPath, config.dbPath, config.maxErrors)
+          errors = sqliteErrors
+        }
+
         if (errors.length > 0) {
           hasContent = true
           contextSections.push("### Known Issues & Errors", "")
@@ -84,7 +195,41 @@ export const SessionContextPlugin: Plugin = async ({
       }
 
       if (config.enableTodos) {
-        const todos = getTodos(projectPath, config.dbPath, config.maxTodos)
+        let todos: { sessionId: string; sessionTitle?: string; todo: string; date: string }[] = []
+
+        if (config.enableVectorSearch) {
+          try {
+            const results = await querySessions(
+              "todo task fixme pending work hack issue bug needs to be done",
+              vectorConfig,
+              { source: "todo", topK: config.maxTodos * 2 }
+            )
+            const seen = new Set<string>()
+            for (const r of results) {
+              if (todos.length >= config.maxTodos) break
+              const key = `${r.session_id}:${r.text}`
+              if (!seen.has(key)) {
+                seen.add(key)
+                todos.push({
+                  sessionId: r.session_id,
+                  sessionTitle: r.metadata.title as string | undefined,
+                  todo: r.text,
+                  date: new Date((r.metadata.time_created as number) || Date.now())
+                    .toISOString().split("T")[0],
+                })
+              }
+            }
+          } catch (e) {
+            const msg = e instanceof Error ? e.message : String(e)
+            console.warn(`[opencode-memento] Vector search for todos failed: ${msg}`)
+          }
+        }
+
+        if (todos.length === 0) {
+          const sqliteTodos = getTodos(projectPath, config.dbPath, config.maxTodos)
+          todos = sqliteTodos
+        }
+
         if (todos.length > 0) {
           hasContent = true
           contextSections.push("### Outstanding TODOs", "")
@@ -97,11 +242,41 @@ export const SessionContextPlugin: Plugin = async ({
       }
 
       if (config.enableDecisions) {
-        const decisions = getDecisions(
-          projectPath,
-          config.dbPath,
-          config.maxDecisions
-        )
+        let decisions: { sessionId: string; sessionTitle?: string; decision: string; date: string }[] = []
+
+        if (config.enableVectorSearch) {
+          try {
+            const results = await querySessions(
+              "decided decision approach architecture choice chose going with we should",
+              vectorConfig,
+              { source: "decision", topK: config.maxDecisions * 2 }
+            )
+            const seen = new Set<string>()
+            for (const r of results) {
+              if (decisions.length >= config.maxDecisions) break
+              const key = `${r.session_id}:${r.text}`
+              if (!seen.has(key)) {
+                seen.add(key)
+                decisions.push({
+                  sessionId: r.session_id,
+                  sessionTitle: r.metadata.title as string | undefined,
+                  decision: r.text,
+                  date: new Date((r.metadata.time_created as number) || Date.now())
+                    .toISOString().split("T")[0],
+                })
+              }
+            }
+          } catch (e) {
+            const msg = e instanceof Error ? e.message : String(e)
+            console.warn(`[opencode-memento] Vector search for decisions failed: ${msg}`)
+          }
+        }
+
+        if (decisions.length === 0) {
+          const sqliteDecisions = getDecisions(projectPath, config.dbPath, config.maxDecisions)
+          decisions = sqliteDecisions
+        }
+
         if (decisions.length > 0) {
           hasContent = true
           contextSections.push("### Recent Decisions", "")
