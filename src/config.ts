@@ -1,5 +1,6 @@
 import { readFile } from "fs/promises"
 import { homedir } from "os"
+import { join } from "path"
 
 export interface SessionContextConfig {
   minSessions?: number
@@ -16,6 +17,8 @@ export interface SessionContextConfig {
   maxTodos?: number
   maxDecisions?: number
   maxFileChanges?: number
+  vectorSearchUrl?: string
+  enableVectorSearch?: boolean
 }
 
 export const DEFAULT_CONFIG: Required<SessionContextConfig> = {
@@ -33,6 +36,8 @@ export const DEFAULT_CONFIG: Required<SessionContextConfig> = {
   maxTodos: 5,
   maxDecisions: 5,
   maxFileChanges: 3,
+  vectorSearchUrl: "http://localhost:8001",
+  enableVectorSearch: false,
 }
 
 function validateConfig(raw: unknown): Partial<SessionContextConfig> {
@@ -56,30 +61,47 @@ function validateConfig(raw: unknown): Partial<SessionContextConfig> {
   if (typeof config.maxTodos === "number") result.maxTodos = config.maxTodos
   if (typeof config.maxDecisions === "number") result.maxDecisions = config.maxDecisions
   if (typeof config.maxFileChanges === "number") result.maxFileChanges = config.maxFileChanges
+  if (typeof config.vectorSearchUrl === "string") result.vectorSearchUrl = config.vectorSearchUrl
+  if (typeof config.enableVectorSearch === "boolean") result.enableVectorSearch = config.enableVectorSearch
 
   return result
+}
+
+async function tryLoadConfig(path: string): Promise<Partial<SessionContextConfig> | null> {
+  try {
+    const raw = JSON.parse(await readFile(path, "utf-8"))
+    return validateConfig(raw)
+  } catch {
+    return null
+  }
+}
+
+function resolveDbPath(config: Required<SessionContextConfig>): Required<SessionContextConfig> {
+  if (config.dbPath.startsWith("~")) {
+    config.dbPath = config.dbPath.replace(/^~/, homedir())
+  }
+  return config
 }
 
 export async function loadConfig(
   projectDir: string
 ): Promise<Required<SessionContextConfig>> {
-  try {
-    const configPath = `${projectDir}/.opencode/session-context.json`
-    const raw = JSON.parse(await readFile(configPath, "utf-8"))
-    const fileConfig = validateConfig(raw)
-    const merged = { ...DEFAULT_CONFIG, ...fileConfig }
-    if (merged.dbPath.startsWith("~")) {
-      merged.dbPath = merged.dbPath.replace(/^~/, homedir())
-    }
-    return merged
-  } catch (error) {
-    console.debug(
-      `[opencode-memento] Config load failed, using defaults:`,
-      error instanceof Error ? error.message : String(error)
-    )
-    return {
-      ...DEFAULT_CONFIG,
-      dbPath: DEFAULT_CONFIG.dbPath.replace(/^~/, homedir()),
-    }
+  const xdgConfigHome = process.env.XDG_CONFIG_HOME
+    ? process.env.XDG_CONFIG_HOME
+    : join(homedir(), ".config")
+
+  const globalPath = join(xdgConfigHome, "opencode", "session-context.json")
+  const localPath = join(projectDir, ".opencode", "session-context.json")
+
+  const globalConfig = await tryLoadConfig(globalPath)
+  if (globalConfig) {
+    return resolveDbPath({ ...DEFAULT_CONFIG, ...globalConfig })
   }
+
+  const localConfig = await tryLoadConfig(localPath)
+  if (localConfig) {
+    return resolveDbPath({ ...DEFAULT_CONFIG, ...localConfig })
+  }
+
+  return resolveDbPath({ ...DEFAULT_CONFIG })
 }
