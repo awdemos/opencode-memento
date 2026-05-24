@@ -16,6 +16,7 @@
     "build": "tsc && bun build ./src/index.ts --outdir ./dist --target bun",
     "dev": "bun run --watch ./src/index.ts",
     "typecheck": "tsc --noEmit",
+    "test": "bun test",
     "prepublishOnly": "bun run build"
   },
   "keywords": [
