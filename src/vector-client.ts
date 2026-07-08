@@ -21,6 +21,8 @@ export interface VectorSearchConfig {
   baseUrl: string
 }
 
+const MAX_ERROR_BODY_BYTES = 4096
+
 async function postJson<T>(url: string, body: unknown): Promise<T> {
   const response = await fetch(url, {
     method: "POST",
@@ -30,10 +32,11 @@ async function postJson<T>(url: string, body: unknown): Promise<T> {
 
   if (!response.ok) {
     const text = await response.text()
-    throw new Error(`HTTP ${response.status}: ${text}`)
+    const snippet = text.slice(0, MAX_ERROR_BODY_BYTES)
+    throw new Error(`HTTP ${response.status}: ${snippet}`)
   }
 
-  return response.json() as Promise<T>
+  return (await response.json()) as T
 }
 
 export async function indexSessionChunks(

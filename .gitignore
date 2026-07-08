@@ -5,3 +5,4 @@ dist/
 bun.lock
 .desloppify/
 .claude/
+.omo/
