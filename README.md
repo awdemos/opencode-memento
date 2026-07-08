@@ -4,6 +4,15 @@
 
 > **Disclaimer**: This plugin is not affiliated with, endorsed by, or officially supported by OpenCode. It is a third-party community plugin.
 
+## Features
+
+- **Project-aware context injection** - Detects active projects and injects relevant prior session context into compaction.
+- **SQLite-driven search (default)** - Queries your local OpenCode database for recent sessions, errors, TODOs, decisions, and file changes.
+- **Semantic vector search (optional)** - Uses [rag-params-finder](https://github.com/neomatrix369/rag-params-finder) for conceptually related matches, with automatic fallback to SQLite.
+- **Pattern discovery** - Surfaces recurring commands, conventions, boundaries, and anti-patterns from prior work.
+- **Skill memory (experimental)** - Proposes reusable project skills from your session history, lets you seed them manually, and can promote stable skills to your project instruction files.
+- **Custom context** - Inject static project notes and per-project configuration via `.opencode/session-context.json`.
+
 ## Why?
 
 OpenCode sessions can lose context when compacted, especially on projects with extensive prior work. This plugin:
