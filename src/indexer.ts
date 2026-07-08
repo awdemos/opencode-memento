@@ -211,14 +211,14 @@ export function extractSessionFileChanges(
     time_created: number
   }
 
-  const query = db.query<SessionRow, [string, number]>(
+  const query = db.query<SessionRow, [string]>(
     `SELECT id, title, summary_files, summary_additions, summary_deletions, summary_diffs, time_created
      FROM session
      WHERE directory = ? AND (summary_files > 0 OR summary_additions > 0 OR summary_deletions > 0)
      ORDER BY time_created DESC`
   )
 
-  const rows = query.all(projectPath, Number.MAX_SAFE_INTEGER)
+  const rows = query.all(projectPath)
   const sessions = new Map<string, SessionChunk[]>()
 
   for (const row of rows) {

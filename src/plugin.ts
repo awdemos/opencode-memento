@@ -1,6 +1,8 @@
 import type { Plugin } from "@opencode-ai/plugin"
+import { Database } from "bun:sqlite"
 import { loadConfig } from "./config"
 import {
+  getDb,
   getSessionCount,
   getRecentSessions,
   getErrorPatterns,
@@ -21,7 +23,16 @@ import {
   getIndexedSessions,
 } from "./vector-client"
 import { discoverPatterns } from "./patterns"
-import { getDb } from "./db"
+import { formatSkillsSection } from "./skills/injection"
+import {
+  loadSkillRegistry,
+  saveSkillRegistry,
+  mergeManualSkills,
+  selectSkillsForContext,
+  promoteSkill,
+} from "./skills/registry"
+import { reflectOnSessions } from "./skills/reflection"
+import type { ReflectableSession } from "./skills/types"
 
 export const SessionContextPlugin: Plugin = async ({
   client,
@@ -55,6 +66,97 @@ export const SessionContextPlugin: Plugin = async ({
 
   const vectorConfig = { baseUrl: config.vectorSearchUrl }
   let sessionsIndexed = false
+
+  let skillRegistry = await loadSkillRegistry(projectPath)
+  skillRegistry = mergeManualSkills(skillRegistry, config.skills)
+  let skillsReflected = false
+
+  function gatherReflectableSessions(
+    db: Database,
+    limit: number
+  ): ReflectableSession[] {
+    const sessionQuery = db.query<
+      { id: string; title: string | null; time_created: number },
+      [string, number]
+    >(
+      "SELECT id, title, time_created FROM session WHERE directory = ? ORDER BY time_created DESC LIMIT ?"
+    )
+    const sessions = sessionQuery.all(projectPath, limit)
+
+    const messageQuery = db.query<
+      { session_id: string; text: string },
+      [string]
+    >(
+      `SELECT m.session_id, json_extract(p.data, '$.text') as text
+       FROM part p
+       JOIN message m ON p.message_id = m.id
+       JOIN session s ON m.session_id = s.id
+       WHERE s.directory = ? AND json_extract(p.data, '$.type') IN ('text', 'reasoning')`
+    )
+    const todoQuery = db.query<
+      { session_id: string; content: string },
+      [string]
+    >(
+      `SELECT t.session_id, t.content
+       FROM todo t
+       JOIN session s ON t.session_id = s.id
+       WHERE s.directory = ? AND t.status != 'completed'`
+    )
+
+    const messagesBySession = new Map<string, string[]>()
+    for (const row of messageQuery.all(projectPath)) {
+      const list = messagesBySession.get(row.session_id) || []
+      if (row.text) list.push(String(row.text))
+      messagesBySession.set(row.session_id, list)
+    }
+
+    const todosBySession = new Map<string, string[]>()
+    for (const row of todoQuery.all(projectPath)) {
+      const list = todosBySession.get(row.session_id) || []
+      list.push(row.content)
+      todosBySession.set(row.session_id, list)
+    }
+
+    return sessions.map((s) => ({
+      id: s.id,
+      title: s.title ?? undefined,
+      messages: messagesBySession.get(s.id) || [],
+      todos: todosBySession.get(s.id) || [],
+      errors: [],
+      decisions: [],
+    }))
+  }
+
+  async function reflectOnce(): Promise<void> {
+    if (skillsReflected || !config.enableSkillMemory) return
+    const db = getDb(config.dbPath)
+    if (!db) return
+
+    try {
+      const sessions = gatherReflectableSessions(db, Math.max(config.searchLimit * 2, 10))
+      if (sessions.length === 0) return
+      const { candidates, updated } = reflectOnSessions(skillRegistry, sessions, {
+        maxCandidates: config.maxReflectionCandidates,
+      })
+      skillRegistry = { ...skillRegistry, skills: [...updated, ...candidates] }
+      if (candidates.length > 0) {
+        await client.app.log({
+          body: {
+            service: "opencode-memento",
+            level: "info",
+            message: `Proposed ${candidates.length} skill candidate(s) from session reflection`,
+          },
+        })
+      }
+      await saveSkillRegistry(skillRegistry)
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e)
+      console.warn(`[opencode-memento] Skill reflection failed: ${msg}`)
+    } finally {
+      db.close()
+      skillsReflected = true
+    }
+  }
 
   async function ensureSessionsIndexed(): Promise<void> {
     if (sessionsIndexed || !config.enableVectorSearch) return
@@ -119,7 +221,7 @@ export const SessionContextPlugin: Plugin = async ({
 
   return {
     "experimental.session.compacting": async (_input, output) => {
-      if (!isActive) return
+      if (!isActive || !output || !Array.isArray(output.context)) return
 
       if (config.enableVectorSearch) {
         await ensureSessionsIndexed()
@@ -314,12 +416,69 @@ export const SessionContextPlugin: Plugin = async ({
         }
       }
 
-      const patterns = await discoverPatterns(projectPath, config)
-      if (patterns.length > 0) {
-        hasContent = true
-        contextSections.push("### Key Patterns from Prior Work", "")
-        patterns.forEach((pattern) => contextSections.push(`- ${pattern}`))
-        contextSections.push("")
+      try {
+        const patterns = await discoverPatterns(projectPath, config)
+        if (patterns.length > 0) {
+          hasContent = true
+          contextSections.push("### Key Patterns from Prior Work", "")
+          patterns.forEach((pattern) => contextSections.push(`- ${pattern}`))
+          contextSections.push("")
+        }
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : String(e)
+        console.warn(`[opencode-memento] Pattern discovery failed: ${msg}`)
+      }
+
+      if (config.enableSkillMemory) {
+        await reflectOnce()
+
+        const inputText =
+          typeof _input === "object" && _input !== null
+            ? JSON.stringify(_input)
+            : String(_input ?? "")
+        const contextText = [inputText, ...(output.context || [])].join(" ")
+        const selected = selectSkillsForContext(skillRegistry, contextText, {
+          maxSkills: config.maxSkills,
+          threshold: config.skillConfidenceThreshold,
+        })
+
+        if (selected.length > 0) {
+          hasContent = true
+          contextSections.push(...formatSkillsSection(selected))
+
+          const now = new Date().toISOString()
+          const updatedSkills = skillRegistry.skills.map((skill) => {
+            if (selected.some((s) => s.id === skill.id)) {
+              return {
+                ...skill,
+                useCount: skill.useCount + 1,
+                lastUsed: now,
+              }
+            }
+            return skill
+          })
+          skillRegistry = { ...skillRegistry, skills: updatedSkills }
+
+          for (const skill of selected) {
+            const promotionResult = await promoteSkill(skill, projectPath, {
+              autoPromote: config.autoPromoteSkills,
+            })
+            if (promotionResult === "pending") {
+              await client.app.log({
+                body: {
+                  service: "opencode-memento",
+                  level: "info",
+                  message: `Skill "${skill.content}" is ready for promotion to instruction file`,
+                },
+              })
+            }
+          }
+
+          await saveSkillRegistry(skillRegistry).catch((e) => {
+            const msg = e instanceof Error ? e.message : String(e)
+            console.warn(`[opencode-memento] Failed to save skill registry: ${msg}`)
+          })
+        }
       }
 
       if (config.customContext.length > 0) {

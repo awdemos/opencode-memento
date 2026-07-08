@@ -123,23 +123,24 @@ export function getErrorPatterns(
     if (!db) return []
 
     const query = db.query<
-      { session_id: string; title: string | null; time_created: number; data: string },
+      { session_id: string; title: string | null; time_created: number; text: string },
       [string, number]
     >(
-      `SELECT m.session_id, s.title, m.time_created, m.data 
-       FROM message m
+      `SELECT m.session_id, s.title, p.time_created, json_extract(p.data, '$.text') as text
+       FROM part p
+       JOIN message m ON p.message_id = m.id
        JOIN session s ON m.session_id = s.id
-       WHERE s.directory = ? AND (
-         LOWER(json_extract(m.data, '$.content')) LIKE '%error%' OR
-         LOWER(json_extract(m.data, '$.content')) LIKE '%failed%' OR
-         LOWER(json_extract(m.data, '$.content')) LIKE '%failure%' OR
-         LOWER(json_extract(m.data, '$.content')) LIKE '%broken%' OR
-         LOWER(json_extract(m.data, '$.content')) LIKE '%exception%' OR
-         LOWER(json_extract(m.data, '$.content')) LIKE '%crash%' OR
-         LOWER(json_extract(m.data, '$.content')) LIKE '%does not work%' OR
-         LOWER(json_extract(m.data, '$.content')) LIKE '%isn''t working%'
+       WHERE s.directory = ? AND json_extract(p.data, '$.type') IN ('text', 'reasoning') AND (
+         LOWER(json_extract(p.data, '$.text')) LIKE '%error%' OR
+         LOWER(json_extract(p.data, '$.text')) LIKE '%failed%' OR
+         LOWER(json_extract(p.data, '$.text')) LIKE '%failure%' OR
+         LOWER(json_extract(p.data, '$.text')) LIKE '%broken%' OR
+         LOWER(json_extract(p.data, '$.text')) LIKE '%exception%' OR
+         LOWER(json_extract(p.data, '$.text')) LIKE '%crash%' OR
+         LOWER(json_extract(p.data, '$.text')) LIKE '%does not work%' OR
+         LOWER(json_extract(p.data, '$.text')) LIKE '%isn''t working%'
        )
-       ORDER BY m.time_created DESC
+       ORDER BY p.time_created DESC
        LIMIT ?`
     )
 
@@ -149,14 +150,13 @@ export function getErrorPatterns(
 
     for (const row of rows) {
       try {
-        const data = JSON.parse(row.data)
-        const content = String(data.content || "")
+        const content = String(row.text || "")
         const lines = content.split("\n")
-        
+
         for (const line of lines) {
           const lower = line.toLowerCase()
           if (
-            (lower.includes("error") || lower.includes("failed") || 
+            (lower.includes("error") || lower.includes("failed") ||
              lower.includes("failure") || lower.includes("broken") ||
              lower.includes("exception") || lower.includes("crash")) &&
             line.length > 15 && line.length < 300
@@ -203,64 +203,24 @@ export function getTodos(
     if (!db) return []
 
     const query = db.query<
-      { session_id: string; title: string | null; time_created: number; data: string },
+      { session_id: string; title: string | null; time_created: number; content: string; status: string },
       [string, number]
     >(
-      `SELECT m.session_id, s.title, m.time_created, m.data 
-       FROM message m
-       JOIN session s ON m.session_id = s.id
-       WHERE s.directory = ? AND (
-         LOWER(json_extract(m.data, '$.content')) LIKE '%todo%' OR
-         LOWER(json_extract(m.data, '$.content')) LIKE '%fixme%' OR
-         LOWER(json_extract(m.data, '$.content')) LIKE '%hack%' OR
-         LOWER(json_extract(m.data, '$.content')) LIKE '%bug%' OR
-         LOWER(json_extract(m.data, '$.content')) LIKE '%issue%' OR
-         LOWER(json_extract(m.data, '$.content')) LIKE '%needs to be%'
-       )
-       ORDER BY m.time_created DESC
+      `SELECT t.session_id, s.title, t.time_created, t.content, t.status
+       FROM todo t
+       JOIN session s ON t.session_id = s.id
+       WHERE s.directory = ? AND t.status != 'completed'
+       ORDER BY t.time_created DESC
        LIMIT ?`
     )
 
-    const rows = query.all(projectPath, limit * 3)
-    const todos: TodoItem[] = []
-    const seen = new Set<string>()
-
-    for (const row of rows) {
-      try {
-        const data = JSON.parse(row.data)
-        const content = String(data.content || "")
-        const lines = content.split("\n")
-        
-        for (const line of lines) {
-          const lower = line.toLowerCase()
-          if (
-            (lower.includes("todo") || lower.includes("fixme") || 
-             lower.includes("hack") || lower.includes("bug") ||
-             lower.includes("issue") || lower.includes("needs to be")) &&
-            line.length > 10 && line.length < 300 &&
-            !lower.includes("github.com") &&
-            !lower.includes("http")
-          ) {
-            const normalized = line.trim().replace(/\s+/g, " ")
-            if (!seen.has(normalized)) {
-              seen.add(normalized)
-              todos.push({
-                sessionId: row.session_id,
-                sessionTitle: row.title ?? undefined,
-                todo: normalized,
-                date: new Date(row.time_created).toISOString().split("T")[0],
-              })
-              if (todos.length >= limit) break
-            }
-          }
-        }
-        if (todos.length >= limit) break
-      } catch {
-        // Skip malformed JSON
-      }
-    }
-
-    return todos
+    const rows = query.all(projectPath, limit)
+    return rows.map((row) => ({
+      sessionId: row.session_id,
+      sessionTitle: row.title ?? undefined,
+      todo: `[${row.status}] ${row.content.trim().replace(/\s+/g, " ")}`,
+      date: new Date(row.time_created).toISOString().split("T")[0],
+    }))
   } catch (error) {
     console.warn(
       `[opencode-memento] Error getting TODOs:`,
@@ -283,24 +243,25 @@ export function getDecisions(
     if (!db) return []
 
     const query = db.query<
-      { session_id: string; title: string | null; time_created: number; data: string },
+      { session_id: string; title: string | null; time_created: number; text: string },
       [string, number]
     >(
-      `SELECT m.session_id, s.title, m.time_created, m.data 
-       FROM message m
+      `SELECT m.session_id, s.title, p.time_created, json_extract(p.data, '$.text') as text
+       FROM part p
+       JOIN message m ON p.message_id = m.id
        JOIN session s ON m.session_id = s.id
-       WHERE s.directory = ? AND (
-         LOWER(json_extract(m.data, '$.content')) LIKE '%decided%' OR
-         LOWER(json_extract(m.data, '$.content')) LIKE '%decision%' OR
-         LOWER(json_extract(m.data, '$.content')) LIKE '%we should%' OR
-         LOWER(json_extract(m.data, '$.content')) LIKE '%let''s go with%' OR
-         LOWER(json_extract(m.data, '$.content')) LIKE '%going with%' OR
-         LOWER(json_extract(m.data, '$.content')) LIKE '%chose%' OR
-         LOWER(json_extract(m.data, '$.content')) LIKE '%choice%' OR
-         LOWER(json_extract(m.data, '$.content')) LIKE '%approach%' OR
-         LOWER(json_extract(m.data, '$.content')) LIKE '%architecture%'
+       WHERE s.directory = ? AND json_extract(p.data, '$.type') IN ('text', 'reasoning') AND (
+         LOWER(json_extract(p.data, '$.text')) LIKE '%decided%' OR
+         LOWER(json_extract(p.data, '$.text')) LIKE '%decision%' OR
+         LOWER(json_extract(p.data, '$.text')) LIKE '%we should%' OR
+         LOWER(json_extract(p.data, '$.text')) LIKE '%let''s go with%' OR
+         LOWER(json_extract(p.data, '$.text')) LIKE '%going with%' OR
+         LOWER(json_extract(p.data, '$.text')) LIKE '%chose%' OR
+         LOWER(json_extract(p.data, '$.text')) LIKE '%choice%' OR
+         LOWER(json_extract(p.data, '$.text')) LIKE '%approach%' OR
+         LOWER(json_extract(p.data, '$.text')) LIKE '%architecture%'
        )
-       ORDER BY m.time_created DESC
+       ORDER BY p.time_created DESC
        LIMIT ?`
     )
 
@@ -310,14 +271,13 @@ export function getDecisions(
 
     for (const row of rows) {
       try {
-        const data = JSON.parse(row.data)
-        const content = String(data.content || "")
+        const content = String(row.text || "")
         const lines = content.split("\n")
-        
+
         for (const line of lines) {
           const lower = line.toLowerCase()
           if (
-            (lower.includes("decided") || lower.includes("decision") || 
+            (lower.includes("decided") || lower.includes("decision") ||
              lower.includes("we should") || lower.includes("let's go with") ||
              lower.includes("going with") || lower.includes("chose") ||
              lower.includes("approach") || lower.includes("architecture")) &&

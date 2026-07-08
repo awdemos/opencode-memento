@@ -1,6 +1,7 @@
 import { readFile } from "fs/promises"
 import { homedir } from "os"
 import { join } from "path"
+import type { SkillCategory } from "./skills/types"
 
 export interface SessionContextConfig {
   minSessions?: number
@@ -19,6 +20,16 @@ export interface SessionContextConfig {
   maxFileChanges?: number
   vectorSearchUrl?: string
   enableVectorSearch?: boolean
+  enableSkillMemory?: boolean
+  maxSkills?: number
+  skillConfidenceThreshold?: number
+  autoPromoteSkills?: boolean
+  maxReflectionCandidates?: number
+  skills?: Array<{
+    category: SkillCategory
+    content: string
+    trigger?: string[]
+  }>
 }
 
 export const DEFAULT_CONFIG: Required<SessionContextConfig> = {
@@ -38,6 +49,12 @@ export const DEFAULT_CONFIG: Required<SessionContextConfig> = {
   maxFileChanges: 3,
   vectorSearchUrl: "http://localhost:8001",
   enableVectorSearch: false,
+  enableSkillMemory: false,
+  maxSkills: 5,
+  skillConfidenceThreshold: 0.3,
+  autoPromoteSkills: false,
+  maxReflectionCandidates: 3,
+  skills: [],
 }
 
 function validateConfig(raw: unknown): Partial<SessionContextConfig> {
@@ -63,6 +80,20 @@ function validateConfig(raw: unknown): Partial<SessionContextConfig> {
   if (typeof config.maxFileChanges === "number") result.maxFileChanges = config.maxFileChanges
   if (typeof config.vectorSearchUrl === "string") result.vectorSearchUrl = config.vectorSearchUrl
   if (typeof config.enableVectorSearch === "boolean") result.enableVectorSearch = config.enableVectorSearch
+  if (typeof config.enableSkillMemory === "boolean") result.enableSkillMemory = config.enableSkillMemory
+  if (typeof config.maxSkills === "number") result.maxSkills = config.maxSkills
+  if (typeof config.skillConfidenceThreshold === "number") result.skillConfidenceThreshold = config.skillConfidenceThreshold
+  if (typeof config.autoPromoteSkills === "boolean") result.autoPromoteSkills = config.autoPromoteSkills
+  if (typeof config.maxReflectionCandidates === "number") result.maxReflectionCandidates = config.maxReflectionCandidates
+  if (Array.isArray(config.skills)) {
+    result.skills = config.skills.filter(
+      (s): s is { category: SkillCategory; content: string; trigger?: string[] } =>
+        s !== null &&
+        typeof s === "object" &&
+        typeof (s as Record<string, unknown>).category === "string" &&
+        typeof (s as Record<string, unknown>).content === "string"
+    )
+  }
 
   return result
 }
@@ -71,8 +102,15 @@ async function tryLoadConfig(path: string): Promise<Partial<SessionContextConfig
   try {
     const raw = JSON.parse(await readFile(path, "utf-8"))
     return validateConfig(raw)
-  } catch {
-    return null
+  } catch (error) {
+    if (
+      error instanceof Error &&
+      "code" in error &&
+      (error as { code: string }).code === "ENOENT"
+    ) {
+      return null
+    }
+    throw error
   }
 }
 
@@ -93,15 +131,8 @@ export async function loadConfig(
   const globalPath = join(xdgConfigHome, "opencode", "session-context.json")
   const localPath = join(projectDir, ".opencode", "session-context.json")
 
-  const globalConfig = await tryLoadConfig(globalPath)
-  if (globalConfig) {
-    return resolveDbPath({ ...DEFAULT_CONFIG, ...globalConfig })
-  }
+  const globalConfig = (await tryLoadConfig(globalPath)) ?? {}
+  const localConfig = (await tryLoadConfig(localPath)) ?? {}
 
-  const localConfig = await tryLoadConfig(localPath)
-  if (localConfig) {
-    return resolveDbPath({ ...DEFAULT_CONFIG, ...localConfig })
-  }
-
-  return resolveDbPath({ ...DEFAULT_CONFIG })
+  return resolveDbPath({ ...DEFAULT_CONFIG, ...globalConfig, ...localConfig })
 }

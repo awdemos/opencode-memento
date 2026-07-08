@@ -36,7 +36,7 @@ function extractBoundaries(content: string, maxPatterns: number): string[] {
     if (line.startsWith("### ")) {
       category = line
         .replace(/^###\s*/, "")
-        .replace(/^[✅⚠️🚫]\s*/, "")
+        .replace(/^[✅⚠️🚫]\s*/u, "")
         .trim()
     } else if ((line.startsWith("-") || line.startsWith("*")) && category) {
       const item = line.replace(/^[-*]\s*/, "")

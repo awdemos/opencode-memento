@@ -183,6 +183,12 @@ Create `.opencode/session-context.json` in your project root to customize behavi
 | `maxFileChanges` | `3` | Max file change summaries to include |
 | `enableVectorSearch` | `false` | Enable semantic search via rag-params-finder |
 | `vectorSearchUrl` | `http://localhost:8001` | URL of the rag-params-finder API |
+| `enableSkillMemory` | `false` | Enable the skill-memory subsystem |
+| `maxSkills` | `5` | Max skills to inject into compaction |
+| `skillConfidenceThreshold` | `0.3` | Minimum relevance score for a skill to be injected |
+| `autoPromoteSkills` | `false` | Append high-confidence skills to instruction files automatically |
+| `skills` | `[]` | Manually seeded skills |
+| `maxReflectionCandidates` | `3` | Max unapproved reflection candidates per session |
 
 **Note**: The `dbPath` supports `~` expansion. Adjust for your OS or custom OpenCode config location.
 
@@ -238,6 +244,27 @@ On **each subsequent compaction**:
 | Speed | Fast (local DB) | Network round-trip (~50-200ms) |
 | Requires | Nothing | rag-params-finder + MongoDB |
 | Fallback | N/A | Automatically falls back to SQLite if vector search fails |
+
+## Skill Memory (Experimental)
+
+When `enableSkillMemory` is true, the plugin maintains a local registry of reusable project skills at `.opencode/memento-skills.json`. It can:
+
+- **Propose skills automatically** by reflecting on recent sessions for repeated TODOs, recurring errors, and explicit normative statements ("always", "never", "should").
+- **Seed skills manually** through the `skills` array in `.opencode/session-context.json`.
+- **Inject relevant skills** into compaction context under `### Memento Skills`.
+- **Promote stable skills** to your project's instruction file (`AGENTS.md`, `CLAUDE.md`, etc.) when they reach high confidence and repeated use.
+
+Enable it:
+
+```json
+{
+  "enableSkillMemory": true,
+  "maxSkills": 5,
+  "autoPromoteSkills": false
+}
+```
+
+Proposed skills are labeled `[Proposed]` until you approve them by editing the registry.
 
 ## Example Output
 
