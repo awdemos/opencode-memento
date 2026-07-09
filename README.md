@@ -1,6 +1,6 @@
-# opencode-memento
+# opencode-memento — OpenCode Plugin for Persistent Project Context & Session Memory
 
-> Preserve project context across OpenCode sessions by injecting relevant prior work into compaction.
+> **opencode-memento** is an OpenCode plugin that preserves project context across sessions. It injects relevant prior work into compaction using SQLite search, optional semantic vector retrieval, and pattern discovery from your session history.
 
 > **Disclaimer**: This plugin is not affiliated with, endorsed by, or officially supported by OpenCode. It is a third-party community plugin.
 
