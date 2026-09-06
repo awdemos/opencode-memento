@@ -115,8 +115,11 @@ async function tryLoadConfig(path: string): Promise<Partial<SessionContextConfig
 }
 
 function resolveDbPath(config: Required<SessionContextConfig>): Required<SessionContextConfig> {
-  if (config.dbPath.startsWith("~")) {
-    config.dbPath = config.dbPath.replace(/^~/, homedir())
+  const home = homedir()
+  if (config.dbPath.startsWith("~/")) {
+    config.dbPath = config.dbPath.replace(/^~\//, home.endsWith("/") ? home : home + "/")
+  } else if (config.dbPath === "~") {
+    config.dbPath = home.endsWith("/") ? home.slice(0, -1) : home
   }
   return config
 }

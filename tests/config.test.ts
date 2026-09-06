@@ -1,7 +1,7 @@
 import { describe, it, expect } from "bun:test"
 import { loadConfig, DEFAULT_CONFIG } from "../src/config"
 import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from "fs"
-import { tmpdir } from "os"
+import { tmpdir, homedir } from "os"
 import { join } from "path"
 
 describe("loadConfig", () => {
@@ -36,6 +36,20 @@ describe("loadConfig", () => {
     const config = await loadConfig(tmpDir)
     expect(config.dbPath).not.toStartWith("~")
     expect(config.dbPath).toEndWith("/custom.db")
+    expect(config.dbPath).toStartWith(homedir())
+    rmSync(tmpDir, { recursive: true, force: true })
+  })
+
+  it("should expand lone tilde in dbPath", async () => {
+    const tmpDir = mkdtempSync(join(tmpdir(), "memento-test-"))
+    mkdirSync(join(tmpDir, ".opencode"), { recursive: true })
+    writeFileSync(
+      join(tmpDir, ".opencode", "session-context.json"),
+      JSON.stringify({ dbPath: "~" })
+    )
+    const config = await loadConfig(tmpDir)
+    expect(config.dbPath).not.toStartWith("~")
+    expect(config.dbPath).toBe(homedir())
     rmSync(tmpDir, { recursive: true, force: true })
   })
 
